@@ -2,6 +2,8 @@
 var Ogone = require('../index');
 var request = require('request');
 
+//E9890B41D029697D00D6ED3105A7142CF07E98F4
+
 exports.testHashify = function(test) {
     var key = 'testtesttesttest';
     var query = {
