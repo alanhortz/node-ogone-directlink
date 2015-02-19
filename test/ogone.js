@@ -1,8 +1,27 @@
+/*jslint node: true */
+
+'use strict';
 
 var Ogone = require('../index');
 var request = require('request');
 
-//E9890B41D029697D00D6ED3105A7142CF07E98F4
+
+exports.testAliasHashify = function(test) {
+    var key = 'testtest';
+    var query = {
+        PSPID: 'test',
+        BRAND: 'VISA',
+        ACCEPTURL: 'https://test.com/callback',
+        EXCEPTIONURL: 'https://test.com/callback'
+    };
+    var sha1 = Ogone.AliasRequest.hashify('sha1', key, query);
+    var sha256 = Ogone.AliasRequest.hashify('sha256', key, query);
+    var sha512 = Ogone.AliasRequest.hashify('sha512', key, query);
+    test.equal(sha1, 'C3F3CBD3A9A63EA5327B46B923DF8325734BFB1D');
+    test.equal(sha256, 'A50F2DE0C4B71F6AC969D358FE04E56B52253AAFCB6C40DFE385324668152B26');
+    test.equal(sha512, '2AEBE635FE5B42268356906A841C32A39B6D3F528E639D41F65E75D4D7132EE13BF1C16582AC2862E8BA0BC23EF62CA5FD728583B95DE451E76AF4F3CA1FCCBB');
+    test.done();
+};
 
 exports.testHashify = function(test) {
     var key = 'testtesttesttest';
