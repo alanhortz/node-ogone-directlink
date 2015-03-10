@@ -2,238 +2,444 @@
 
 'use strict';
 
-var Ogone = require('../index');
+require('sugar');
+
+var crypto = require('crypto');
+
 var request = require('request');
+var qs = require('querystring');
+var url = require('url');
+var xml2js = require('xml2js');
+var JSONSchema = require('json-schema');
 
+function OgoneError(response) {
+    this.name = 'OgoneError';
+    this.message = 'NCError: ' + response.ncerror || 'Unknown';
+    this.response = response;
+}
 
-exports.testAliasHashify = function(test) {
-    var key = 'testtest';
-    var query = {
-        PSPID: 'test',
-        BRAND: 'VISA',
-        ACCEPTURL: 'https://test.com/callback',
-        EXCEPTIONURL: 'https://test.com/callback'
-    };
-    var sha1 = Ogone.AliasRequest.hashify('sha1', key, query);
-    var sha256 = Ogone.AliasRequest.hashify('sha256', key, query);
-    var sha512 = Ogone.AliasRequest.hashify('sha512', key, query);
-    test.equal(sha1, 'C3F3CBD3A9A63EA5327B46B923DF8325734BFB1D');
-    test.equal(sha256, 'A50F2DE0C4B71F6AC969D358FE04E56B52253AAFCB6C40DFE385324668152B26');
-    test.equal(sha512, '2AEBE635FE5B42268356906A841C32A39B6D3F528E639D41F65E75D4D7132EE13BF1C16582AC2862E8BA0BC23EF62CA5FD728583B95DE451E76AF4F3CA1FCCBB');
-    test.done();
-};
+OgoneError.prototype = new Error();
+OgoneError.prototype.constructor = OgoneError;
 
-exports.testHashify = function(test) {
-    var key = 'testtesttesttest';
-    var query = {
-        PSPID: 'test',
-        PSWD: 'test',
-        USERID: 'test',
-        ORDERID: 'AB5456CB896',
-        OPERATION: 'SAL',
-        CURRENCY: 'EUR',
-        AMOUNT: '12995',
-        BRAND: 'VISA',
-        CARDNO: '4111111111111111',
-        ED: '12/09'
-    };
-    var sha1 = Ogone.OrderRequest.hashify('sha1', key, query);
-    var sha256 = Ogone.OrderRequest.hashify('sha256', key, query);
-    var sha512 = Ogone.OrderRequest.hashify('sha512', key, query);
-    test.equal(sha1, 'F9E92B124753DDDC8116286C3A7168686798B31B');
-    test.equal(sha256, '963B0631B038F1A0E9238C512D40A88D2C7BB6A9BEFE7FF21F5D2B002FF7744E');
-    test.equal(sha512, '91C963E214608311F1E068085B52D5190C402A6E60F77246FF989283180EC685D36CED98986999981B0FA033BF7B225528E3FD401593444CEA27F55161DAA887');
-    test.done();
-};
-
-exports.testNormalize = function(test) {
-    var query = {
-        'test1': 'foo',
-        'tEsT2': 'bar',
-        'TEST3': 'foobar'
-    };
-    var lower = Ogone.Request.lower(query);
-    var upper = Ogone.Request.upper(query);
-
-    test.deepEqual(lower, {
-        'test1': 'foo',
-        'test2': 'bar',
-        'test3': 'foobar'
-    });
-    test.deepEqual(upper, {
-        'TEST1': 'foo',
-        'TEST2': 'bar',
-        'TEST3': 'foobar'
-    });
-    test.throws(function() {
-        test.lower({
-            'asd': 'foo',
-            'ASD': 'bar'
-        });
-    });
-    test.throws(function() {
-         test.upper({
-            'asd': 'foo',
-            'ASD': 'bar'
-        });
-    });
-    test.done();
-};
-
-exports.testOperation = function(test) {
-    var req = new Ogone.Request();
-    req._send = function(callback) {
-
-    };
-    req.operation('Hello', null);
-    test.equal(req.query.operation, 'Hello');
-    test.done();
-};
-
-exports.testPrepare = function(test) {
-    var req = new Ogone.Request();
-    req.required = ['foo'];
-    var result = req._prepare({'foo': 'bar'});
-    test.equal(result.FOO, 'bar');
-    test.done();
-};
-
-exports.testSendPrepareError = function(test) {
-    var req = new Ogone.Request();
-    req._prepare = function() {
-        return new Error('Prepare Error');
-    };
-    req._send(function(err) {
-        test.ok(err instanceof Error);
-        test.equal(err.message, 'Prepare Error');
-        test.done();
-    });
-};
-
-exports.testSendPostError = function(test) {
-    var _post = request.post;
-    var req = new Ogone.Request();
-    req._prepare = function() {
-        return {};
-    };
-    request.post = function(message, callback) {
-        return callback(new Error('Post Error'));
-    };
-    req._send(function(err) {
-        test.ok(err instanceof Error);
-        test.equal(err.message, 'Post Error');
-        request.post = _post;
-        test.done();
-    });
-};
-
-exports.testSendParseError = function(test) {
-    var _post = request.post;
-    var req = new Ogone.Request();
-    req._prepare = function() {
-        return {};
-    };
-    request.post = function(message, callback) {
-        return callback(null, 'Test');
-    };
-    req.parser.parseString = function(body, callback) {
-        return callback(new Error("Parse Error"));
-    };
-    req._send(function(err) {
-        test.ok(err instanceof Error);
-        test.equal(err.message, 'Parse Error');
-        request.post = _post;
-        test.done();
-    });
-};
-
-exports.testSendUnknownResult = function(test) {
-    var _post = request.post;
-    var req = new Ogone.Request();
-    req._prepare = function() {
-        return {};
-    };
-    request.post = function(message, callback) {
-        return callback(null, 'Test');
-    };
-    req.parser.parseString = function(body, callback) {
-        return callback(null, "Unknown Response");
-    };
-    req._send(function(err) {
-        test.ok(err instanceof Error);
-        request.post = _post;
-        test.done();
-    });
-};
-
-exports.testSendNcError = function(test) {
-    var _post = request.post;
-    var req = new Ogone.Request();
-    req._prepare = function() {
-        return {};
-    };
-    request.post = function(message, callback) {
-        return callback(null, 'Test');
-    };
-    req.parser.parseString = function(body, callback) {
-        return callback(null, {'@': {
-            ncerror: '5001113'
-        }});
-    };
-    req._send(function(err) {
-        test.ok(err instanceof Ogone.OgoneError);
-        test.equal(err.response.ncerror, '5001113');
-        request.post = _post;
-        test.done();
-    });
-};
-
-exports.testSendSuccess = function(test) {
-    var _post = request.post;
-    var req = new Ogone.Request();
-    req._prepare = function() {
-        return {foo: 123};
-    };
-    request.post = function(message, callback) {
-        test.equal(message.body, 'foo=123');
-        return callback(null, 'Test');
-    };
-    req.parser.parseString = function(body, callback) {
-        return callback(null, {'@': {
-            ncerror: '0'
-        }});
-    };
-    req._send(function(err, result) {
-        test.equal(result.ncerror, '0');
-        request.post = _post;
-        test.done();
-    });
-};
-
-exports.testOgoneMode = function(test) {
-    var testa = new Ogone('test');
-    test.equal(testa.mode, 'test');
-    var prod = new Ogone('prod');
-    test.equal(prod.mode, 'prod');
-    test.throws(function() {
-        new Ogone('error');
-    });
-    test.done();
-};
-
-exports.testStringify = function(test) {
-    function Obj(value) {
-        this.value = value;
+function Ogone(mode, defaults) {
+    if (Object.isObject(mode)) {
+        defaults = mode;
+        mode = null;
     }
-    Obj.prototype.toString = function() {
-        return this.value;
-    };
-    var a = {
-        test: new Obj(123)
-    };
-    test.equal(typeof a.test.value, 'number');
-    test.equal(typeof a.test, 'object');
-    var result = Ogone.Request.stringify(a);
-    test.equal(result, 'test=123');
-    test.done();
+    this.defaults = defaults || {};
+    if (mode && !~['test', 'prod'].indexOf(mode)) throw new Error('Unknown mode: ' + mode);
+    this.mode = mode || 'test';
+}
+
+Ogone.prototype.createOrderRequest = function(json, algorithm, key) {
+    json = json || {};
+    Object.merge(json, this.defaults, true);
+    return new OrderRequest(this.mode, json, algorithm, key);
 };
+
+Ogone.prototype.createMaintenanceOrder = function(json) {
+    json = json || {};
+    Object.merge(json, this.defaults, true);
+    return new MaintenanceRequest(this.mode, json);
+};
+
+Ogone.prototype.createQueryRequest = function(json) {
+    json = json || {};
+    Object.merge(json, this.defaults, true);
+    return new QueryRequest(this.mode, json);
+};
+
+Ogone.prototype.createAliasRequest = function(json, algorithm, key) {
+    json = json || {};
+    json.pspid = this.defaults.pspid;
+    return new AliasRequest(this.mode, json, algorithm, key);
+};
+
+function AliasGatewayRequest(url, json, schema) {
+    Object.merge(schema || {}, {
+        type: 'object',
+        properties: {
+            pspid: {
+                type: 'string',
+                required: true
+            }
+        }
+    }, true);
+
+    var result = JSONSchema.validate(json, schema);
+    if (!result.valid) throw new Error(result.errors);
+    this.query = Object.clone(json) || {};
+    this.url = url;
+
+}
+
+AliasGatewayRequest.prototype.send = function(callback) {
+    this._send(callback);
+};
+
+AliasGatewayRequest.prototype._prepare = function(query) {
+    return Request.upper(query);
+};
+
+AliasGatewayRequest.prototype._send = function(callback) {
+    var prepared = this._prepare(this.query);
+    if (prepared instanceof Error) return callback(prepared);
+    var body = Request.stringify(prepared);
+    request.post({
+        uri: this.url,
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body
+    }, function(err, response, body) {
+        if (err) return callback(err);
+        if (response.statusCode === 302) {
+            var result = url.parse(response.headers.location, true);
+            result.query.redirectionUrl = response.headers.location;
+            console.log(result.query);
+            return callback(null, result.query);    
+        } else {
+            return callback({'message' : 'An error occured during the alias creation'});
+        }
+        
+    }.bind(this));
+};
+
+
+function Request(url, json, schema) {
+    Object.merge(schema || {}, {
+        type: 'object',
+        properties: {
+            pspid: {
+                type: 'string',
+                required: true
+            },
+            pswd: {
+                type: 'string',
+                required: true
+            },
+            userid: {
+                type: 'string',
+                required: true
+            }
+        }
+    }, true);
+
+    var result = JSONSchema.validate(json, schema);
+    if (!result.valid) throw new Error(result.errors);
+    this.query = Object.clone(json) || {};
+    this.url = url;
+    this.parser = new xml2js.Parser(xml2js.defaults['0.1']);
+}
+
+Request.prototype.operation = function(operation, callback) {
+    this.query.operation = operation;
+    this._send(callback);
+};
+
+Request.prototype._prepare = function(query) {
+    return Request.upper(query);
+};
+
+Request.prototype._send = function(callback) {
+    var prepared = this._prepare(this.query);
+    if (prepared instanceof Error) return callback(prepared);
+    var body = Request.stringify(prepared);
+    request.post({
+        uri: this.url,
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body
+    }, function(err, response, body) {
+        if (err) return callback(err);
+        this.parser.parseString(body, function (err, result) {
+            if (err) return callback(err);
+            
+            if (!result['@']) return callback(new Error('Unknown response: ' + result));
+            var normalize = Request.lower(result['@']);
+            if (normalize.ncerror && normalize.ncerror !== '0') {
+                return callback(new OgoneError(normalize));
+            }
+            return callback(null, normalize);
+        }.bind(this));
+    }.bind(this));
+};
+
+Request.stringify = function(obj) {
+    var prepared = {};
+    Object.keys(obj).each(function(key) {
+        prepared[key] = obj[key] ? obj[key].toString() : '';
+    });
+    return qs.stringify(prepared);
+};
+
+Request.normalize = function(method, obj) {
+    var result = {};
+    Object.keys(obj).map(function(key) {
+        var normalized = key[method]();
+        if (result[normalized]) {
+            throw new Error('Can not normalize cause of key: ' + key);
+        }
+        result[normalized] = obj[key];
+    });
+    return result;
+};
+
+Request.lower = Request.normalize.bind(this, 'toLowerCase');
+Request.upper = Request.normalize.bind(this, 'toUpperCase');
+
+function AliasRequest(mode, json, algorithm, key) {
+    var schema = {
+        type: 'object',
+        properties: {
+            orderid: {
+                type: 'string',
+                required: true
+            },
+            brand: {
+                type: 'string',
+                required: false
+            },
+            cn: {
+                type: 'string',
+                required: true
+            },
+            cardno: {
+                type: 'string',
+                required: true
+            },
+            cvc: {
+                type: 'string',
+                required: true
+            },
+            ed: {
+                type: 'string',
+                required: true
+            },
+            accepturl: {
+                type: 'string',
+                required: true
+            },
+            exceptionurl: {
+                type: 'string',
+                required: true
+            },
+            paramplus: {
+                type: 'string',
+                required: false
+            },
+            alias: {
+                type: 'string',
+                required: false
+            },
+            language: {
+                type: 'string',
+                required: false
+            },
+            aliaspersistedafteruse: {
+                type: 'string',
+                required: false
+            }
+        }
+    }; 
+
+    AliasGatewayRequest.call(this, 'https://secure.ogone.com/ncol/' + mode + '/alias_gateway.asp', json, schema);
+    this.algorithm = algorithm;
+    this.key = key;
+}
+
+AliasRequest.prototype.__proto__ = AliasGatewayRequest.prototype;
+AliasRequest.constructor = AliasRequest;
+
+AliasRequest.prototype._prepare = function(query) {
+    if (this.algorithm && this.key) {
+        query.shasign = AliasRequest.hashify(this.algorithm, this.key, query);
+        console.log(query);
+    }
+    return AliasGatewayRequest.prototype._prepare.apply(this, [query]);
+};
+
+AliasRequest.hashify = function(algorithm, key, obj) {
+    var shasum = crypto.createHash(algorithm);
+    var keys = ['accepturl','brand','exceptionurl','pspid'];
+    var token = keys.sort().map(function(prop) {
+        if (obj[prop]) return prop.toUpperCase() + '=' + obj[prop];
+    }).join(key) + key;
+    console.log(token);
+    return shasum.update(token).digest('hex').toUpperCase();
+};
+
+AliasRequest.prototype.send = AliasGatewayRequest.prototype.send;
+
+
+function OrderRequest(mode, json, algorithm, key) {
+    var schema = {
+        type: 'object',
+        properties: {
+            orderid: {
+                type: ['string', 'number'],
+                required: true
+            },
+            amount: {
+                type: ['string', 'number'],
+                required: true
+            },
+            alias: {
+                type: 'string',
+                required: true
+            },
+            currency: {
+                type: 'string',
+                'default': 'EUR',
+                required: true
+            },
+            brand: {
+                type: 'string',
+                required: true
+            },
+            cardno: {
+                type: 'string',
+                required: true
+            },
+            ed: {
+                type: 'string',
+                required: true
+            },
+            cvc: {
+                type: 'string',
+                required: true
+            },
+            com: {
+                type: 'string'
+            },
+            cn: {
+                type: 'string'
+            },
+            email: {
+                type: 'string'
+            },
+            ownerAddress: {
+                type: 'string'
+            },
+            ownerZip: {
+                type: 'string'
+            },
+            ownerCity: {
+                type: 'string'
+            },
+            ownerTelno: {
+                type: 'string'
+            },
+            globOrderId: {
+                type: 'string'
+            },
+            remote_address: {
+                type: 'string'
+            },
+            rtimeout: {
+                type: 'string'
+            },
+            eci: {
+                type: 'string'
+            }
+        }
+    };
+    
+    if(json.alias) {
+        schema.properties.brand.required = false;
+        schema.properties.cardno.required = false;
+        schema.properties.ed.required = false;
+        schema.properties.cvc.required = false;
+        schema.properties.cn.required = false;
+
+    } else {
+        schema.properties.alias.required = false;
+    }
+
+    console.log(json);
+    console.log(schema);
+
+
+    Request.call(this, 'https://secure.ogone.com/ncol/' + mode + '/orderdirect.asp', json, schema);
+    this.algorithm = algorithm;
+    this.key = key;
+}
+
+OrderRequest.prototype.__proto__ = Request.prototype;
+OrderRequest.constructor = OrderRequest;
+
+OrderRequest.prototype._prepare = function(query) {
+    if (this.algorithm && this.key) {
+        query.shasign = OrderRequest.hashify(this.algorithm, this.key, query);
+    }
+    return Request.prototype._prepare.apply(this, [query]);
+};
+
+OrderRequest.hashify = function(algorithm, key, obj) {
+    var shasum = crypto.createHash(algorithm);
+    var token = Object.keys(obj).sort().map(function(key) {
+        if (obj[key]) return key.toUpperCase() + '=' + obj[key];
+    }).join(key) + key;
+    return shasum.update(token).digest('hex').toUpperCase();
+};
+
+OrderRequest.prototype.res = Request.prototype.operation.fill('RES');
+OrderRequest.prototype.sal = Request.prototype.operation.fill('SAL');
+OrderRequest.prototype.rfd = Request.prototype.operation.fill('RFD');
+
+function MaintenanceRequest(mode, json) {
+    var schema = {
+        type: 'object',
+        properties: {
+            payid: {
+                type: ['string', 'number']
+            },
+            orderid: {
+                type: ['string', 'number']
+            },
+            amount: {
+                type: 'number',
+                required: true
+            }
+        }
+    };
+    
+    Request.call(this, 'https://secure.ogone.com/ncol/' + mode + '/maintenancedirect.asp', json, schema);
+}
+
+MaintenanceRequest.prototype.__proto__ = Request.prototype;
+MaintenanceRequest.constructor = MaintenanceRequest;
+
+MaintenanceRequest.prototype.ren = Request.prototype.operation.fill('REN');
+MaintenanceRequest.prototype.del = Request.prototype.operation.fill('DEL');
+MaintenanceRequest.prototype.des = Request.prototype.operation.fill('DES');
+MaintenanceRequest.prototype.sal = Request.prototype.operation.fill('SAL');
+MaintenanceRequest.prototype.sas = Request.prototype.operation.fill('SAS');
+MaintenanceRequest.prototype.rfd = Request.prototype.operation.fill('RFD');
+MaintenanceRequest.prototype.rfs = Request.prototype.operation.fill('RFS');
+
+function QueryRequest(mode, json) {
+    var schema = {
+        type: 'object',
+        properties: {
+            payid: {
+                type: ['string', 'number']
+            }
+        }
+    };
+    Request.call(this, 'https://secure.ogone.com/ncol/' + mode + '/querydirect.asp', json, schema);
+}
+
+QueryRequest.prototype.__proto__ = Request.prototype;
+QueryRequest.constructor = QueryRequest;
+
+QueryRequest.prototype.status = Request.prototype._send;
+
+module.exports = Ogone;
+module.exports.Request = Request;
+module.exports.AliasRequest = AliasRequest;
+module.exports.OrderRequest = OrderRequest;
+module.exports.MaintenanceRequest = MaintenanceRequest;
+module.exports.QueryRequest = QueryRequest;
+module.exports.OgoneError = OgoneError;
